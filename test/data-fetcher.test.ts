@@ -659,6 +659,104 @@ describe("fetchGitHubData integration with time filtering", () => {
     expect(result.comments[0]?.body).toBe("Comment before trigger");
   });
 
+  it("should exclude issue comments by actor", async () => {
+    const mockOctokits = {
+      graphql: jest.fn().mockResolvedValue({
+        repository: {
+          issue: {
+            number: 123,
+            title: "Test Issue",
+            body: "Issue body",
+            author: { login: "author" },
+            comments: {
+              nodes: [
+                {
+                  id: "1",
+                  databaseId: "1",
+                  body: "Previous Claude review",
+                  author: { login: "claude[bot]" },
+                  createdAt: "2024-01-15T11:00:00Z",
+                },
+                {
+                  id: "2",
+                  databaseId: "2",
+                  body: "Human follow-up",
+                  author: { login: "human-reviewer" },
+                  createdAt: "2024-01-15T11:30:00Z",
+                },
+              ],
+            },
+          },
+        },
+      }),
+      rest: jest.fn() as any,
+    };
+
+    const result = await fetchGitHubData({
+      octokits: mockOctokits as any,
+      repository: "test-owner/test-repo",
+      prNumber: "123",
+      isPR: false,
+      excludeCommentsByActor: "*[bot]",
+    });
+
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0]?.author.login).toBe("human-reviewer");
+    expect(result.comments[0]?.body).toBe("Human follow-up");
+  });
+
+  it("should exclude top-level PR comments by actor", async () => {
+    const mockOctokits = {
+      graphql: jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            number: 456,
+            title: "Test PR",
+            body: "PR body",
+            author: { login: "author" },
+            comments: {
+              nodes: [
+                {
+                  id: "1",
+                  databaseId: "1",
+                  body: "Previous Claude review",
+                  author: { login: "claude[bot]" },
+                  createdAt: "2024-01-15T11:00:00Z",
+                },
+                {
+                  id: "2",
+                  databaseId: "2",
+                  body: "Human follow-up",
+                  author: { login: "human-reviewer" },
+                  createdAt: "2024-01-15T11:30:00Z",
+                },
+              ],
+            },
+            files: { nodes: [] },
+            reviews: { nodes: [] },
+          },
+        },
+      }),
+      rest: {
+        pulls: {
+          listFiles: jest.fn().mockResolvedValue({ data: [] }),
+        },
+      },
+    };
+
+    const result = await fetchGitHubData({
+      octokits: mockOctokits as any,
+      repository: "test-owner/test-repo",
+      prNumber: "456",
+      isPR: true,
+      excludeCommentsByActor: "*[bot]",
+    });
+
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0]?.author.login).toBe("human-reviewer");
+    expect(result.comments[0]?.body).toBe("Human follow-up");
+  });
+
   it("should filter PR reviews based on trigger time", async () => {
     const mockOctokits = {
       graphql: jest.fn().mockResolvedValue({
